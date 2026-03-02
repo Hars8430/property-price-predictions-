@@ -22,6 +22,7 @@ const PIPELINE_RESULTS = {
       "Age":            0.0105,
       "Pool/Garage":    0.0075,
     },
+    
     currency: "USD",
     symbol: "$",
     mean_price: 802542,
