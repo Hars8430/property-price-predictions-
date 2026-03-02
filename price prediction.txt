@@ -1,0 +1,448 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "authorship_tag": "ABX9TyOqlnZt8G0TFoNIw7c+2cYo",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/Hars8430/price-predictions-for-Dallas-and-Gurugram-/blob/main/price%20prediction\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 11,
+      "metadata": {
+        "id": "drP_wPIBUvqV"
+      },
+      "outputs": [],
+      "source": [
+        "import numpy as np\n",
+        "import pandas as pd\n",
+        "import warnings\n",
+        "warnings.filterwarnings(\"ignore\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from sklearn.linear_model    import LinearRegression\n",
+        "from sklearn.ensemble        import RandomForestRegressor, GradientBoostingRegressor\n",
+        "from sklearn.neural_network  import MLPRegressor\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.preprocessing   import StandardScaler, LabelEncoder\n",
+        "from sklearn.metrics         import mean_absolute_error, mean_squared_error, r2_score"
+      ],
+      "metadata": {
+        "id": "KKAZedMwU09F"
+      },
+      "execution_count": 12,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def generate_dallas_data(n=1200, seed=42):\n",
+        "    np.random.seed(seed)\n",
+        "    neighborhoods = {\n",
+        "        \"Uptown\":        550_000,\n",
+        "        \"Highland Park\": 900_000,\n",
+        "        \"Plano\":         420_000,\n",
+        "        \"Frisco\":        480_000,\n",
+        "        \"Oak Cliff\":     280_000,\n",
+        "        \"Garland\":       250_000,\n",
+        "    }\n",
+        "    records = []\n",
+        "    per_hood = n // len(neighborhoods)\n",
+        "    for hood, base in neighborhoods.items():\n",
+        "        for _ in range(per_hood):\n",
+        "            sqft          = max(600,  np.random.normal(2000, 500))\n",
+        "            bedrooms      = int(np.clip(np.random.normal(3, 1), 1, 7))\n",
+        "            bathrooms     = int(np.clip(np.random.normal(2, 1), 1, 5))\n",
+        "            age           = max(0, int(np.random.exponential(10)))\n",
+        "            school_rating = round(np.clip(np.random.normal(5, 2), 1, 10), 1)\n",
+        "            dist_downtown = round(max(0.5, np.random.normal(12, 6)), 1)\n",
+        "            has_pool      = int(np.random.random() < 0.2)\n",
+        "            garage        = int(np.clip(np.random.poisson(1.5), 0, 4))\n",
+        "            price = (base\n",
+        "                     + sqft          * 150\n",
+        "                     + bedrooms      * 10_000\n",
+        "                     + bathrooms     *  7_000\n",
+        "                     - age           *  2_000\n",
+        "                     + school_rating * 10_000\n",
+        "                     - dist_downtown *  3_000\n",
+        "                     + has_pool      * 30_000\n",
+        "                     + garage        *  6_000\n",
+        "                     + np.random.normal(0, 25_000))\n",
+        "            records.append({\n",
+        "                \"neighborhood\" : hood,\n",
+        "                \"sqft\"         : round(sqft),\n",
+        "                \"bedrooms\"     : bedrooms,\n",
+        "                \"bathrooms\"    : bathrooms,\n",
+        "                \"age_years\"    : age,\n",
+        "                \"school_rating\": school_rating,\n",
+        "                \"dist_downtown\": dist_downtown,\n",
+        "                \"has_pool\"     : has_pool,\n",
+        "                \"garage_spaces\": garage,\n",
+        "                \"price_usd\"    : max(50_000, round(price, -2)),\n",
+        "            })\n",
+        "    return pd.DataFrame(records)"
+      ],
+      "metadata": {
+        "id": "CGBmpvYuU2l1"
+      },
+      "execution_count": 13,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def generate_gurgaon_data(n=1200, seed=99):\n",
+        "    np.random.seed(seed)\n",
+        "    sectors = {\n",
+        "        \"Golf Course Road\" : 14_000,\n",
+        "        \"DLF Phase 1-3\"    : 12_000,\n",
+        "        \"Sohna Road\"       :  7_500,\n",
+        "        \"New Gurgaon\"      :  6_500,\n",
+        "        \"Palam Vihar\"      :  5_500,\n",
+        "        \"Manesar\"          :  4_500,\n",
+        "    }\n",
+        "    records = []\n",
+        "    per_sector = n // len(sectors)\n",
+        "    for sector, base_psf in sectors.items():\n",
+        "        for _ in range(per_sector):\n",
+        "            sqft       = max(400, np.random.normal(1300, 350))\n",
+        "            bhk        = int(np.clip(np.random.normal(3, 1), 1, 5))\n",
+        "            floor      = int(np.random.randint(0, 31))\n",
+        "            age        = max(0, int(np.random.exponential(5)))\n",
+        "            amenities  = round(np.clip(np.random.normal(6, 2), 1, 10), 1)\n",
+        "            dist_metro = round(max(0.2, np.random.exponential(2.5)), 1)\n",
+        "            parking    = int(np.clip(np.random.poisson(1), 0, 3))\n",
+        "            furnishing = int(np.random.choice([0, 1, 2], p=[0.35, 0.40, 0.25]))\n",
+        "            psf = max(2000, base_psf\n",
+        "                      + amenities  * 200\n",
+        "                      - dist_metro * 300\n",
+        "                      + floor      *  20\n",
+        "                      - age        * 100\n",
+        "                      + furnishing * 400\n",
+        "                      + np.random.normal(0, base_psf * 0.08))\n",
+        "            price = sqft * psf\n",
+        "            records.append({\n",
+        "                \"sector\"    : sector,\n",
+        "                \"sqft\"      : round(sqft),\n",
+        "                \"bhk\"       : bhk,\n",
+        "                \"floor\"     : floor,\n",
+        "                \"age_years\" : age,\n",
+        "                \"amenities\" : amenities,\n",
+        "                \"dist_metro\": dist_metro,\n",
+        "                \"parking\"   : parking,\n",
+        "                \"furnishing\": furnishing,\n",
+        "                \"price_inr\" : max(1_500_000, round(price, -3)),\n",
+        "            })\n",
+        "    return pd.DataFrame(records)"
+      ],
+      "metadata": {
+        "id": "-pdNXCAJVVVT"
+      },
+      "execution_count": 14,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "#PREPROCESSING THE RAW DATA\n",
+        "def preprocess(df, target_col, cat_cols):\n",
+        "    df = df.copy()\n",
+        "    encoders = {}\n",
+        "    for col in cat_cols:\n",
+        "        le = LabelEncoder()\n",
+        "        df[col] = le.fit_transform(df[col])\n",
+        "        encoders[col] = le\n",
+        "\n",
+        "    X = df.drop(columns=[target_col])\n",
+        "    y = df[target_col]\n",
+        "    feature_names = list(X.columns)\n",
+        "\n",
+        "    X_train, X_test, y_train, y_test = train_test_split(\n",
+        "        X, y, test_size=0.2, random_state=42)\n",
+        "\n",
+        "    scaler = StandardScaler()\n",
+        "    X_train_sc = scaler.fit_transform(X_train)   # fit ONLY on train\n",
+        "    X_test_sc  = scaler.transform(X_test)        # only transform on test\n",
+        "\n",
+        "    return (X_train, X_test, y_train, y_test,\n",
+        "            X_train_sc, X_test_sc,\n",
+        "            scaler, encoders, feature_names)\n",
+        "NEEDS_SCALE = {\"Linear Regression\", \"Neural Network\"}\n",
+        "\n",
+        "def get_models():\n",
+        "    return {\n",
+        "        \"Linear Regression\" : LinearRegression(),\n",
+        "\n",
+        "        \"Random Forest\"     : RandomForestRegressor(\n",
+        "            n_estimators=200, max_depth=15,\n",
+        "            min_samples_leaf=2, random_state=42, n_jobs=-1),\n",
+        "\n",
+        "        \"Gradient Boosting\" : GradientBoostingRegressor(\n",
+        "            n_estimators=200, learning_rate=0.05,\n",
+        "            max_depth=5, subsample=0.8, random_state=42),\n",
+        "\n",
+        "        \"Neural Network\"    : MLPRegressor(\n",
+        "            hidden_layer_sizes=(256, 128, 64),\n",
+        "            activation=\"relu\", solver=\"adam\",\n",
+        "            alpha=0.01, max_iter=1000,\n",
+        "            early_stopping=True, validation_fraction=0.1,\n",
+        "            n_iter_no_change=25, random_state=42),\n",
+        "    }"
+      ],
+      "metadata": {
+        "id": "ulJlwOQDVXsS"
+      },
+      "execution_count": 15,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def compute_metrics(model, X_test, y_test):\n",
+        "    y_pred = model.predict(X_test)\n",
+        "    return {\n",
+        "        \"R2\"  : round(r2_score(y_test, y_pred), 4),\n",
+        "        \"MAE\" : round(mean_absolute_error(y_test, y_pred), 0),\n",
+        "        \"RMSE\": round(np.sqrt(mean_squared_error(y_test, y_pred)), 0),\n",
+        "        \"MAPE\": round(np.mean(np.abs((y_test - y_pred) / y_test)) * 100, 2),\n",
+        "    }\n",
+        "\n",
+        "def train_and_evaluate(label,\n",
+        "                       X_train, X_test, y_train, y_test,\n",
+        "                       X_train_sc, X_test_sc):\n",
+        "    print(f\"\\n{'='*58}\")\n",
+        "    print(f\"  {label}\")\n",
+        "    print(f\"{'='*58}\")\n",
+        "    print(f\"  {'Model':<22} {'R2':>7}  {'MAE':>14}  {'MAPE':>7}\")\n",
+        "    print(f\"  {'-'*55}\")\n",
+        "\n",
+        "    results = {}\n",
+        "    for name, model in get_models().items():\n",
+        "        Xtr = X_train_sc if name in NEEDS_SCALE else X_train\n",
+        "        Xte = X_test_sc  if name in NEEDS_SCALE else X_test\n",
+        "        model.fit(Xtr, y_train)\n",
+        "        m = compute_metrics(model, Xte, y_test)\n",
+        "        results[name] = {**m, \"model\": model}\n",
+        "        print(f\"  {name:<22} {m['R2']:>7.3f}  {m['MAE']:>14,.0f}  {m['MAPE']:>6.1f}%\")\n",
+        "\n",
+        "    best = max(results, key=lambda k: results[k]['R2'])\n",
+        "    print(f\"\\n  Best model: {best}  (R2={results[best]['R2']})\")\n",
+        "    return results"
+      ],
+      "metadata": {
+        "id": "EDK_k_HoVpCu"
+      },
+      "execution_count": 16,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def predict_price(model_name, results, scaler, feature_names, values):\n",
+        "    row = pd.DataFrame([dict(zip(feature_names, values))])\n",
+        "    model = results[model_name][\"model\"]\n",
+        "    if model_name in NEEDS_SCALE:\n",
+        "        row = scaler.transform(row)\n",
+        "    return model.predict(row)[0]\n"
+      ],
+      "metadata": {
+        "id": "A-WengT7VyBw"
+      },
+      "execution_count": 17,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "if __name__ == \"__main__\":\n",
+        "\n",
+        "    # ── DALLAS ────────────────────────────────────────────────────────────────\n",
+        "    print(\"\\n>>> Generating Dallas, TX data ...\")\n",
+        "    df_d = generate_dallas_data(1200)\n",
+        "    print(df_d.head(3).to_string())\n",
+        "    print(f\"\\n  Rows: {len(df_d)}  |  \"\n",
+        "          f\"Price: ${df_d.price_usd.min():,.0f} to ${df_d.price_usd.max():,.0f}  |  \"\n",
+        "          f\"Mean: ${df_d.price_usd.mean():,.0f}\")\n",
+        "\n",
+        "    (X_tr_d, X_te_d, y_tr_d, y_te_d,\n",
+        "     X_tr_d_sc, X_te_d_sc,\n",
+        "     scaler_d, enc_d, feat_d) = preprocess(df_d, \"price_usd\", [\"neighborhood\"])\n",
+        "\n",
+        "    res_d = train_and_evaluate(\"DALLAS, TX (USD)\",\n",
+        "                               X_tr_d, X_te_d, y_tr_d, y_te_d,\n",
+        "                               X_tr_d_sc, X_te_d_sc)\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "mtHNMhdnWz6J",
+        "outputId": "64beb492-7d22-4047-8603-54e5a9837fbb"
+      },
+      "execution_count": 18,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "\n",
+            ">>> Generating Dallas, TX data ...\n",
+            "  neighborhood  sqft  bedrooms  bathrooms  age_years  school_rating  dist_downtown  has_pool  garage_spaces  price_usd\n",
+            "0       Uptown  2248         2          2          1            8.0           13.7         0              0   983400.0\n",
+            "1       Uptown  1710         2          1          7            3.2            1.7         0              0   832300.0\n",
+            "2       Uptown  1546         1          3          2            4.5           27.4         1              1   817600.0\n",
+            "\n",
+            "  Rows: 1200  |  Price: $260,100 to $1,463,300  |  Mean: $827,052\n",
+            "\n",
+            "==========================================================\n",
+            "  DALLAS, TX (USD)\n",
+            "==========================================================\n",
+            "  Model                       R2             MAE     MAPE\n",
+            "  -------------------------------------------------------\n",
+            "  Linear Regression        0.103         179,333    22.0%\n",
+            "  Random Forest            0.978          28,870     3.8%\n",
+            "  Gradient Boosting        0.983          25,832     3.5%\n",
+            "  Neural Network          -0.201         190,707    21.6%\n",
+            "\n",
+            "  Best model: Gradient Boosting  (R2=0.9829)\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Predict one sample Dallas house\n",
+        "plano_enc    = enc_d[\"neighborhood\"].transform([\"Plano\"])[0]\n",
+        "# features: neighborhood, sqft, bedrooms, bathrooms, age_years,\n",
+        "#           school_rating, dist_downtown, has_pool, garage_spaces\n",
+        "sample_dallas = [plano_enc, 2200, 3, 2, 8, 7.0, 10.0, 0, 2]\n",
+        "\n",
+        "print(\"\\n  Sample: Plano | 2200sqft | 3bed/2bath | age=8 | \"\n",
+        "      \"school=7.0 | 10mi downtown | no pool | 2-car garage\")\n",
+        "print(f\"  {'Model':<22}  Predicted Price\")\n",
+        "print(f\"  {'-'*42}\")\n",
+        "for name in res_d:\n",
+        "    p = predict_price(name, res_d, scaler_d, feat_d, sample_dallas)\n",
+        "    print(f\"  {name:<22}  ${p:,.0f}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "paukP0C3XQn_",
+        "outputId": "5b047dba-724f-4f37-fdef-c9c0b2574430"
+      },
+      "execution_count": 19,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "\n",
+            "  Sample: Plano | 2200sqft | 3bed/2bath | age=8 | school=7.0 | 10mi downtown | no pool | 2-car garage\n",
+            "  Model                   Predicted Price\n",
+            "  ------------------------------------------\n",
+            "  Linear Regression       $880,763\n",
+            "  Random Forest           $810,127\n",
+            "  Gradient Boosting       $808,342\n",
+            "  Neural Network          $671,586\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# ── GURGAON ───────────────────────────────────────────────────────────────\n",
+        "print(\"\\n\\n>>> Generating Gurgaon, Haryana data ...\")\n",
+        "df_g = generate_gurgaon_data(1200)\n",
+        "print(df_g.head(3).to_string())\n",
+        "print(f\"\\n  Rows: {len(df_g)}  |  \"\n",
+        "      f\"Price: Rs{df_g.price_inr.min()/1e7:.2f}Cr to Rs{df_g.price_inr.max()/1e7:.2f}Cr  |  \"\n",
+        "      f\"Mean: Rs{df_g.price_inr.mean()/1e7:.2f}Cr\")\n",
+        "\n",
+        "(X_tr_g, X_te_g, y_tr_g, y_te_g,\n",
+        " X_tr_g_sc, X_te_g_sc,\n",
+        " scaler_g, enc_g, feat_g) = preprocess(df_g, \"price_inr\", [\"sector\"])\n",
+        "\n",
+        "res_g = train_and_evaluate(\"GURGAON, HARYANA (INR)\",\n",
+        "                           X_tr_g, X_te_g, y_tr_g, y_te_g,\n",
+        "                           X_tr_g_sc, X_te_g_sc)\n",
+        "\n",
+        "# Predict one sample Gurgaon flat\n",
+        "sohna_enc     = enc_g[\"sector\"].transform([\"Sohna Road\"])[0]\n",
+        "# features: sector, sqft, bhk, floor, age_years,\n",
+        "#           amenities, dist_metro, parking, furnishing\n",
+        "sample_gurgaon = [sohna_enc, 1400, 3, 8, 4, 7.0, 1.5, 1, 1]\n",
+        "\n",
+        "print(\"\\n  Sample: Sohna Road | 1400sqft | 3BHK | Floor-8 | \"\n",
+        "      \"age=4 | amenities=7 | metro=1.5km | 1 parking | semi-furnished\")\n",
+        "print(f\"  {'Model':<22}  Predicted Price\")\n",
+        "print(f\"  {'-'*48}\")\n",
+        "for name in res_g:\n",
+        "    p = predict_price(name, res_g, scaler_g, feat_g, sample_gurgaon)\n",
+        "    print(f\"  {name:<22}  Rs{p/1e7:.2f}Cr  (Rs {p:,.0f})\")\n",
+        "\n",
+        "print(\"\\n\\nAll done!\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "WYsuCfbrXak1",
+        "outputId": "bcee7c24-fec4-4d51-c233-24dcbad315f8"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "\n",
+            "\n",
+            ">>> Generating Gurgaon, Haryana data ...\n",
+            "             sector  sqft  bhk  floor  age_years  amenities  dist_metro  parking  furnishing   price_inr\n",
+            "0  Golf Course Road  1250    5      9          6        4.1         9.5        1           2  16294000.0\n",
+            "1  Golf Course Road   792    2     23          2        7.6         1.3        2           2  12819000.0\n",
+            "2  Golf Course Road  1395    1     17          6        6.8         1.3        1           1  20759000.0\n",
+            "\n",
+            "  Rows: 1200  |  Price: Rs0.15Cr to Rs3.98Cr  |  Mean: Rs1.18Cr\n",
+            "\n",
+            "==========================================================\n",
+            "  GURGAON, HARYANA (INR)\n",
+            "==========================================================\n",
+            "  Model                       R2             MAE     MAPE\n",
+            "  -------------------------------------------------------\n",
+            "  Linear Regression        0.628       2,939,828    31.8%\n",
+            "  Random Forest            0.953       1,020,652    10.3%\n",
+            "  Gradient Boosting        0.963         881,907     8.2%\n"
+          ]
+        }
+      ]
+    }
+  ]
+}
